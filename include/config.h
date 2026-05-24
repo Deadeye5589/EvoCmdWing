@@ -134,6 +134,6 @@ extern bool sensitivityMode;          // True when actively adjusting sensitivit
 // ================================
 // MIDI CONSTANTS
 // ================================
-const int MAX_MESSAGES_PER_LOOP = 32; // Process up to 32 messages per loop
+const int MAX_MESSAGES_PER_LOOP = 128; // Process up to 128 messages per loop
 
 #endif // CONFIG_H

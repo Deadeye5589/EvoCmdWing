@@ -8,7 +8,7 @@ import subprocess
 # -------------------- CONFIG --------------------
 hex_file = ".pio/build/teensy41/firmware.hex"
 teensy_cli = os.path.expanduser("~/.platformio/packages/tool-teensy/teensy_loader_cli")
-n
+
 # ------------------ CHECK HEX ------------------
 if not os.path.exists(hex_file):
     print(f"[ERROR] Firmware not found at {hex_file}")

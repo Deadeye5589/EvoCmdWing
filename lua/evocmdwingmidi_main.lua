@@ -189,8 +189,7 @@ local function sendMidiFeedback(ccNumber, value)
     local midiValue = math.floor((value / 100) * 127)
     local command = 'SendMIDI "Control" ' .. midiChannel .. '/' .. ccNumber .. ' ' .. midiValue
     Cmd(command)
-    
-    coroutine.yield(0.010) -- 10ms delay between midi sends  to not overwhelm teensy buffer
+    -- coroutine.yield(0.010) -- 10ms delay between midi sends to not overwhelm teensy buffer for testing only
 end
 
 
@@ -198,7 +197,7 @@ local function sendMidiStatus(channel, ccNumber, value)
     local midiValue = value > 127 and 127 or (value < 0 and 0 or math.floor(value))
     local command = 'SendMIDI "Control" ' .. channel .. '/' .. ccNumber .. ' ' .. midiValue
     Cmd(command)
-    coroutine.yield(0.010) -- 10ms delay
+    -- coroutine.yield(0.010) -- 10ms delay between midi sends to not overwhelm teensy buffer for testing only
 end
 
 local function sendPageChange(pageNumber)
