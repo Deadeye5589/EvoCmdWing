@@ -45,9 +45,6 @@ void loop() {
     usbMIDI.send_now();
     midiDataPending = false;
   }
-
-  // Handle midi often to keep teensy buffer from overflow
-  handleIncomingMIDI();
   
   // LED Update all colors at once 
   if (hasPendingLEDUpdate && (millis() - lastMidiUpdateTime) >= MIDI_DEBOUNCE_MS) {

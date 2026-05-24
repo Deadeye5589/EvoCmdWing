@@ -2,21 +2,21 @@
 #include "neopixel.h"
 #include "utils.h"
 #include <MIDIUSB.h>
+#include <string.h>
 
 // ================================
 // MIDI GLOBAL VARIABLES
 // ================================
 
+// Current-page storage for 16 XKeys
+ExecutorStatus xkeyStatus[16] = {0};
 
-// Page-based storage for up to 127 pages, 16 XKeys each
-// pageData[page][xkey] where page = 0-126 (for pages 1-127), xkey = 0-15 (for XKeys 1-16)
-ExecutorStatus pageData[127][16] = {0};
+// Current page tracking (1-based)
+int currentPage = 1;
 
-// Current page tracking (1-127, but stored as 0-126 index)
-int currentPage = 0;  // Default to page 1 (index 0)
-
-// Current active status (points to current page data for convenience)
-ExecutorStatus* xkeyStatus = pageData[currentPage];
+// Track 14-bit page number parts from MIDI Channel 3
+static uint8_t pendingPageLsb = 0;
+static uint8_t pendingPageMsb = 0;
 
 // ================================
 // MIDI COMMUNICATION FUNCTIONS
@@ -81,56 +81,53 @@ void handleIncomingMIDI() {
 // ================================
 // PAGE CHANGE MIDI HANDLER
 // ================================
+static void refreshCurrentPageLEDs() {
+  bool anyLEDChanged = false;
+  for (int i = 0; i < NUM_XKEYS; i++) {
+    ExecutorStatus* status = &xkeyStatus[i];
+
+    if (!status->isPopulated) {
+      setXKeyLED(i, 0, 0, 0, 0.0);
+      anyLEDChanged = true;
+    } else if (!status->isOn) {
+      setXKeyLED(i, status->red, status->green, status->blue, config.offBrightness);
+      anyLEDChanged = true;
+    } else {
+      setXKeyLED(i, status->red, status->green, status->blue, config.onBrightness);
+      anyLEDChanged = true;
+    }
+  }
+
+  if (anyLEDChanged) {
+    showStrip();
+    debugPrintf("[LED] Page %d loaded - all LEDs updated", currentPage);
+  }
+}
+
 // Handles MIDI Channel 3 data for page changes
-// CC 1 = Current page number (1-127)
-// When page changes, updates current page pointer and refreshes all LEDs
+// CC 1/2 = Current page number as 14-bit value (LSB/MSB, zero-based on wire)
+// Lua sends MSB first, then LSB. Apply the page change when LSB arrives.
+// When page changes, keep the current LED/state until the full resend from grandMA3 arrives.
 void handlePageMIDI(byte ch, byte cc, byte value) {
-  if (ch == 3 && cc == 1) {
-    // Page change on Channel 3, CC 1
-    int newPage = constrain(value, 1, 127);  // Ensure valid page range
-    int newPageIndex = newPage - 1;  // Convert to 0-126 index
-    
-    if (newPageIndex != currentPage) {
-      int oldPage = currentPage + 1;  // Convert back to 1-127 for display
-      currentPage = newPageIndex;
-      
-      // Update pointer to current page data
-      xkeyStatus = pageData[currentPage];
-      
-      debugPrintf("[PAGE CHANGE] %d → %d (loading cached data)", oldPage, newPage);
-      
-      // Update all LEDs with new page data
-      bool anyLEDChanged = false;
-      for (int i = 0; i < NUM_XKEYS; i++) {
-        ExecutorStatus* status = &xkeyStatus[i];
-        
-        if (!status->isPopulated) {
-          // Key not populated - turn LEDs off
-          setXKeyLED(i, 0, 0, 0, 0.0);
-          anyLEDChanged = true;
-        } else if (status->isPopulated && !status->isOn) {
-          // Key populated but not on
-          setXKeyLED(i, status->red, status->green, status->blue, config.offBrightness);
-          anyLEDChanged = true;
-        } else if (status->isPopulated && status->isOn) {
-          // Key populated and on
-          setXKeyLED(i, status->red, status->green, status->blue, config.onBrightness);
-          anyLEDChanged = true;
-        }
-      }
-      
-      // Single LED update for entire page
-      if (anyLEDChanged) {
-        showStrip();
-        debugPrintf("[LED] Page %d loaded - all LEDs updated", newPage);
-      }
-      
+  if (ch == 3 && (cc == 1 || cc == 2)) {
+    if (cc == 2) {
+      pendingPageMsb = constrain(value, 0, 127);
+      return;
+    }
+
+    pendingPageLsb = constrain(value, 0, 127);
+
+    int newPage = 1 + pendingPageLsb + (pendingPageMsb * 128);
+    if (newPage != currentPage) {
+      int oldPage = currentPage;
+      currentPage = newPage;
+      debugPrintf("[PAGE CHANGE] %d → %d (waiting for full resend, preserving current LEDs)", oldPage, newPage);
       debugPrintf("[PAGE] Now on page %d", newPage);
     } else {
       debugPrintf("[PAGE] Already on page %d", newPage);
     }
   } else {
-    debugPrintf("[MIDI CH3] Unknown CC: %d Value: %d (Expected: CC 1 for page changes)", cc, value);
+    debugPrintf("[MIDI CH3] Unknown CC: %d Value: %d (Expected: CC 1/2 for page changes)", cc, value);
   }
 }
 
@@ -175,7 +172,7 @@ void handleStatusMIDI(byte ch, byte cc, byte value) {
     }
     
     // Store in current page data
-    ExecutorStatus* status = &pageData[currentPage][xkeyIndex];
+    ExecutorStatus* status = &xkeyStatus[xkeyIndex];
     
     // Decode combined status value
     if (value == 0) {
@@ -197,7 +194,7 @@ void handleStatusMIDI(byte ch, byte cc, byte value) {
     }
     
     debugPrintf("[MIDI CH2] Page %d XKey %d (Exec %d) %s: %d (Pop=%s On=%s)", 
-                currentPage + 1, xkeyNumber, executorNumber, dataType, value,
+                currentPage, xkeyNumber, executorNumber, dataType, value,
                 status->isPopulated ? "YES" : "NO",
                 status->isOn ? "ON" : "OFF");
                 
@@ -219,7 +216,7 @@ void handleStatusMIDI(byte ch, byte cc, byte value) {
       }
       
       // Store in current page data
-      ExecutorStatus* status = &pageData[currentPage][xkeyIndex];
+      ExecutorStatus* status = &xkeyStatus[xkeyIndex];
       
       // Set color component
       switch (colorComponent) {
@@ -238,7 +235,7 @@ void handleStatusMIDI(byte ch, byte cc, byte value) {
       }
       
       debugPrintf("[MIDI CH2] Page %d XKey %d (Exec %d) %s: %d (CC:%d)", 
-                  currentPage + 1, xkeyNumber, executorNumber, dataType, value, cc);
+                  currentPage, xkeyNumber, executorNumber, dataType, value, cc);
     }
   } else {
     debugPrintf("[MIDI CH2] Unknown CC: %d Value: %d (Valid range: CC 1-64)", cc, value);
@@ -246,7 +243,7 @@ void handleStatusMIDI(byte ch, byte cc, byte value) {
 
   // Update LED for changed XKey and display complete status
   if (xkeyIndex >= 0 && xkeyIndex < 16) {
-    ExecutorStatus* status = &pageData[currentPage][xkeyIndex];
+    ExecutorStatus* status = &xkeyStatus[xkeyIndex];
     //int xkeyNumber = xkeyIndex + 1;
     
     // Update LED immediately for this XKey

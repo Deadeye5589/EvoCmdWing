@@ -13,19 +13,19 @@
 --     Update the MidiRemote Targets with the current sequences assigned to the XKeys to keep track of pages changes and moving of sequences
 --     Track and send the fader values for Executors 291-298 for syncing encoder values for XKeys 1-8
 --     Track and send the status of Executors 191-198 and 291-298 (XKeys 1-16) Tracks: Populated/On/Off/Appearance Color
---     Cache status data to reduce midi traffic on page changes and will send updates when assignments or appearance changes
+--     Send full page data on every page change and live updates while staying on the same page
 
 -- Midi Channels:
 --     Channel 1: Fader sync: XKeys 1-8 use CC 6-13 (only on sequence changes/page changes) Manually chaning XKey Encoder values in software will cause Physical Encoders to be out of sync until page/sequence change
 --     Channel 2: Status: XKeys 1-16 use CC 1-16 (populated/on/off state)
 --     Channel 2: RGB: XKeys 1-16 use CC 17-64 (3 CCs each (rgb), only sent when populated and not black)
---     Channel 3: Page changes: CC 1 = current page number (1-127)
+--     Channel 3: Page changes: CC 1 = page LSB, CC 2 = page MSB (14-bit page number)
 
 -- Status encoding:
 --     Status encoding: 0=not populated, 65=populated+off, 127=populated+on
 --     RGB: 0-127 per rgb channel, black sequences sent as white (127,127,127) for visibility
 --         You can change the default color variables to replace black appearances
---     Page tracking: Caches state for pages, only sends changes
+--     Page tracking: Full resend on every page change, only sends changes while staying on the same page
 --     Fader sync: Only sends fader values when sequence assignments change (prevents encoder jumping)
 
 -- XKey RGB
@@ -54,13 +54,16 @@ local running = false
 local debugMode = false -- Debug output mode - off by default
 local currentPage = nil -- Track current page
 
--- Page-based state tracking for up to 127 pages
-local pageIndex = {} -- Track which pages we've indexed: pageIndex[pageNum] = true
-local pageExecutorStates = {} -- [pageNum][execNum] = {populated, on, colorR, colorG, colorB}
+-- Current-page state tracking only
+local currentExecutorStates = {} -- [execNum] = {populated, on, colorR, colorG, colorB}
 local startupComplete = false -- Track if we've done initial indexing
 
 -- Change tracking for exeecutors
 local changedExecutors = {} -- List of executors that changed on current page
+
+-- Cached executor metadata for the active page
+local executorMetaCache = {}
+local executorMetaPage = nil
 
 -- MIDI Remote caching
 local cachedXKeyRemotes = {} -- Cache of found XKey remotes: {remote_object, exec_info}
@@ -84,8 +87,7 @@ end
 -- Clear all cached state variables (called on script startup)
 local function clearAllCachedState()
     currentPage = nil
-    pageIndex = {}
-    pageExecutorStates = {}
+    currentExecutorStates = {}
     startupComplete = false
     changedExecutors = {}
     
@@ -95,34 +97,66 @@ local function clearAllCachedState()
     
     -- Clear page cache
     currentCyclePageNum = nil
+    executorMetaCache = {}
+    executorMetaPage = nil
     
     DebugPrint("Cached state cleared - ready for direct access sync")
 end
 
+local function buildExecutorMetaCache(pageNum)
+    executorMetaCache = {}
 
-local function getDirectExecutorInfo(execNum)
-    -- Get executor status
-    local exec, page = GetExecutor(execNum)
-    
+    for _, execNum in ipairs(EXECUTORS_TO_MONITOR) do
+        local handle, page = GetExecutor(execNum)
+        local faderRef = nil
+
+        if execNum >= 291 and execNum <= 298 then
+            local objectListExec = ObjectList("page " .. pageNum .. "." .. execNum)[1]
+            if objectListExec then
+                faderRef = objectListExec.fader
+            end
+        end
+
+        executorMetaCache[execNum] = {
+            handle = handle,
+            page = page,
+            faderRef = faderRef
+        }
+    end
+
+    executorMetaPage = pageNum
+end
+
+local function ensureExecutorMetaCache(pageNum)
+    if executorMetaPage ~= pageNum then
+        buildExecutorMetaCache(pageNum)
+    end
+end
+
+local function readExecutorState(execNum)
+    local meta = executorMetaCache[execNum]
+    local exec = meta and meta.handle or nil
+
     if not exec then
-        -- Executor doesn't exist
         return {
             faderValue = 0,
             isOn = false,
             isPopulated = false,
             color = {r = 0, g = 0, b = 0},
             object = nil,
-            faderRef = nil
+            faderRef = meta and meta.faderRef or nil
         }
     end
-    
-    -- Get all live values directly from the executor
-    local faderValue = exec:GetFader{token = "FaderMaster", faderDisabled = false} or 0
+
     local myObject = exec.Object
     local isPopulated = (myObject ~= nil)
     local isOn = isPopulated and myObject:HasActivePlayback() or false
-    
-    -- Get color data
+    local faderValue = 0
+
+    if execNum >= 291 and execNum <= 298 then
+        faderValue = exec:GetFader{token = "FaderMaster", faderDisabled = false} or 0
+    end
+
     local color = {r = 0, g = 0, b = 0}
     if isPopulated then
         local apper = myObject["APPEARANCE"]
@@ -134,22 +168,26 @@ local function getDirectExecutorInfo(execNum)
             }
         end
     end
-    
-    -- Get fader reference for MIDI remote assignment
-    local faderRef = nil
-    local objectListExec = ObjectList("page " .. currentCyclePageNum .. "." .. execNum)[1]
-    if objectListExec then
-        faderRef = objectListExec.fader
-    end
-    
+
     return {
         faderValue = faderValue,
         isOn = isOn,
         isPopulated = isPopulated,
         color = color,
         object = myObject,
-        faderRef = faderRef
+        faderRef = meta and meta.faderRef or nil
     }
+end
+
+local function collectExecutorStates(pageNum)
+    ensureExecutorMetaCache(pageNum)
+
+    local executorStates = {}
+    for _, execNum in ipairs(EXECUTORS_TO_MONITOR) do
+        executorStates[execNum] = readExecutorState(execNum)
+    end
+
+    return executorStates
 end
 
 
@@ -201,9 +239,13 @@ local function sendMidiStatus(channel, ccNumber, value)
 end
 
 local function sendPageChange(pageNumber)
-    local pageValue = pageNumber > 127 and 127 or (pageNumber < 1 and 1 or math.floor(pageNumber))
-    sendMidiStatus(pageMidiChannel, 1, pageValue)
-    DebugPrint("Page change sent: %d", pageValue)
+    local safePage = pageNumber < 1 and 1 or math.floor(pageNumber)
+    local zeroBasedPage = safePage - 1
+    local pageLsb = zeroBasedPage % 128
+    local pageMsb = math.floor(zeroBasedPage / 128)
+    sendMidiStatus(pageMidiChannel, 2, pageMsb)
+    sendMidiStatus(pageMidiChannel, 1, pageLsb)
+    DebugPrint("Page change sent: %d (LSB=%d MSB=%d)", safePage, pageLsb, pageMsb)
 end
 
 
@@ -229,13 +271,9 @@ end
 
 -- Get cached executor state for comparison
 local function getCachedExecutorState(pageNum, execNum)
-    if not pageExecutorStates[pageNum] then
-        return nil, nil, nil, nil, nil -- No cached data for this page
-    end
-    
-    local cached = pageExecutorStates[pageNum][execNum]
+    local cached = currentExecutorStates[execNum]
     if not cached then
-        return nil, nil, nil, nil, nil -- No cached data for this executor
+        return nil, nil, nil, nil, nil
     end
     
     return cached.populated, cached.on, cached.colorR, cached.colorG, cached.colorB
@@ -243,11 +281,7 @@ end
 
 -- Cache executor state for future comparison
 local function setCachedExecutorState(pageNum, execNum, populated, on, colorR, colorG, colorB)
-    if not pageExecutorStates[pageNum] then
-        pageExecutorStates[pageNum] = {}
-    end
-    
-    pageExecutorStates[pageNum][execNum] = {
+    currentExecutorStates[execNum] = {
         populated = populated,
         on = on,
         colorR = colorR,
@@ -257,7 +291,7 @@ local function setCachedExecutorState(pageNum, execNum, populated, on, colorR, c
 end
 
 -- Send fader sync for a specific executor (only when sequence assignment changes)
-local function sendFaderSync(execNum, xkeyNum, reason)
+local function sendFaderSync(execNum, xkeyNum, reason, executorStates)
     local currentPageNum = currentCyclePageNum
     
     -- Only send fader sync for executors 291-298 (XKeys 1-8) (Encoders 6-13)
@@ -266,8 +300,8 @@ local function sendFaderSync(execNum, xkeyNum, reason)
     end
     
     
-    -- Get current fader value to sync Teensy encoder tracking
-    local currentValue = getDirectExecutorInfo(execNum).faderValue
+    local execInfo = executorStates and executorStates[execNum] or readExecutorState(execNum)
+    local currentValue = execInfo and execInfo.faderValue or 0
     local faderCCNumber = startingCC + xkeyNum - 1
     sendMidiFeedback(faderCCNumber, currentValue)
     
@@ -282,11 +316,11 @@ local function sendFaderSync(execNum, xkeyNum, reason)
 end
 
 -- Send MIDI status for a specific executor 
-local function sendExecutorStatus(execNum, xkeyNum, force)
+local function sendExecutorStatus(execNum, xkeyNum, force, executorStates)
     local currentPageNum = currentCyclePageNum
     
     -- Get current states
-    local execInfo = getDirectExecutorInfo(execNum)
+    local execInfo = executorStates and executorStates[execNum] or readExecutorState(execNum)
     local isPopulated = execInfo.isPopulated
     local isOn = execInfo.isOn  
     local color = execInfo.color
@@ -343,7 +377,7 @@ local function sendExecutorStatus(execNum, xkeyNum, force)
         
         -- Send fader sync if sequence assignment changed
         if sequenceChanged then
-            sendFaderSync(execNum, xkeyNum, "sequence assignment changed")
+            sendFaderSync(execNum, xkeyNum, "sequence assignment changed", executorStates)
         end
     end
     
@@ -373,14 +407,14 @@ local function sendExecutorStatus(execNum, xkeyNum, force)
 end
 
 -- Send full page data (startup or new page indexing)
-local function sendFullPageData(pageNum, reason)
+local function sendFullPageData(pageNum, reason, executorStates)
     DebugPrint("=== SENDING FULL PAGE DATA: Page %d (%s) ===", pageNum, reason)
     local messagesSent = 0
     
     -- Send fader sync for executors 291-298 to initialize Teensy encoder tracking
     for execNum = 291, 298 do
         local xkeyNum = execNum - 290  -- 1-8
-        if sendFaderSync(execNum, xkeyNum, reason) then
+        if sendFaderSync(execNum, xkeyNum, reason, executorStates) then
             messagesSent = messagesSent + 1
         end
     end
@@ -390,27 +424,24 @@ local function sendFullPageData(pageNum, reason)
         if execNum >= 291 and execNum <= 298 then
             -- Executors 291-298 = XKeys 1-8
             local xkeyNum = execNum - 290
-            if sendExecutorStatus(execNum, xkeyNum, true) then
+            if sendExecutorStatus(execNum, xkeyNum, true, executorStates) then
                 messagesSent = messagesSent + 1
             end
         elseif execNum >= 191 and execNum <= 198 then
             -- Executors 191-198 = XKeys 9-16  
             local xkeyNum = execNum - 190
             local actualXkeyNum = xkeyNum + 8
-            if sendExecutorStatus(execNum, actualXkeyNum, true) then
+            if sendExecutorStatus(execNum, actualXkeyNum, true, executorStates) then
                 messagesSent = messagesSent + 1
             end
         end
     end
     
-    -- Mark page as indexed
-    pageIndex[pageNum] = true
-    
     DebugPrint("Full page data sent: %d messages", messagesSent)
 end
 
 -- Send changes for current page
-local function sendChangedExecutors()
+local function sendChangedExecutors(executorStates)
     local messagesSent = 0
     
     local changedExecCount = 0
@@ -427,7 +458,7 @@ local function sendChangedExecutors()
             local xkeyNum = execNum - 290  -- 1-8
             
             -- Send status data (includes fader sync if sequence changed)
-            if sendExecutorStatus(execNum, xkeyNum, false) then
+            if sendExecutorStatus(execNum, xkeyNum, false, executorStates) then
                 messagesSent = messagesSent + 1
                 DebugPrint("Executor %d (XKey %d) status updated", execNum, xkeyNum)
             end
@@ -437,7 +468,7 @@ local function sendChangedExecutors()
             local xkeyNum = execNum - 190  -- 1-8
             local actualXkeyNum = xkeyNum + 8  -- 9-16
             
-            if sendExecutorStatus(execNum, actualXkeyNum, false) then
+            if sendExecutorStatus(execNum, actualXkeyNum, false, executorStates) then
                 messagesSent = messagesSent + 1
                 DebugPrint("Executor %d (XKey %d) status updated", execNum, actualXkeyNum)
             end
@@ -450,7 +481,7 @@ local function sendChangedExecutors()
     DebugPrint("Messages sent: %d", messagesSent)
 end
 
-local function checkForExecutorChanges()
+local function checkForExecutorChanges(executorStates)
     local currentPageNum = currentCyclePageNum
     local contentChanged = false
     local stateChanged = false
@@ -466,7 +497,7 @@ local function checkForExecutorChanges()
         if not startupComplete then
             DebugPrint("=== STARTUP: Indexing page %d ===", currentPageNum)
             sendPageChange(currentPageNum)
-            sendFullPageData(currentPageNum, "startup")
+            sendFullPageData(currentPageNum, "startup", executorStates)
             startupComplete = true
             return -- Exit early after startup
         end
@@ -476,61 +507,48 @@ local function checkForExecutorChanges()
         DebugPrint("=== PAGE CHANGE: %d → %d ===", currentPage, currentPageNum)
         currentPage = currentPageNum
         pageChanged = true
+        currentExecutorStates = {}
         
         -- Send page change notification
         sendPageChange(currentPageNum)
-        
-        -- Check if this page has been indexed before
-        if not pageIndex[currentPageNum] then
-            -- New page - send full data including fader sync
-            DebugPrint("New page detected - sending full data")
-            sendFullPageData(currentPageNum, "new page")
-            return -- Exit early after full page send
-        else
-            -- Known page - send fader sync for encoder tracking, then let normal change detection handle differences
-            DebugPrint("Returning to known page %d - sending fader sync", currentPageNum)
-            for execNum = 291, 298 do
-                local xkeyNum = execNum - 290  -- 1-8
-                sendFaderSync(execNum, xkeyNum, "known page change")
-            end
-        end
+        DebugPrint("Page changed - sending full data")
+        sendFullPageData(currentPageNum, "page change", executorStates)
+        return -- Exit early after full page send
     end
     
     -- Check for executor state changes
     for _, execNum in ipairs(EXECUTORS_TO_MONITOR) do
-
-            local execInfo = getDirectExecutorInfo(execNum)
-            local currentObject = execInfo.object
-            local isPopulated = execInfo.isPopulated
-            local currentOnState = execInfo.isOn
-            local currentColor = execInfo.color
-            
-            -- Get cached state for comparison 
-            local cachedPopulated, cachedOn, cachedColorR, cachedColorG, cachedColorB = getCachedExecutorState(currentPageNum, execNum)
-            
-            local executorChanged = false
-            
-            -- Check if status changed from cached state
-            if (cachedPopulated ~= isPopulated) or (cachedOn ~= currentOnState) then
-                DebugPrint("[CHANGE] Executor %d: Status changed (Populated: %s, On: %s)", 
-                       execNum, isPopulated and "true" or "false", currentOnState and "true" or "false")
-                executorChanged = true
-                contentChanged = true
-                stateChanged = true
-            end
-            
-            -- Check if color changed from cached state
-            if (cachedColorR ~= currentColor.r) or (cachedColorG ~= currentColor.g) or (cachedColorB ~= currentColor.b) then
-                DebugPrint("[CHANGE] Executor %d: Color changed to RGB(%d,%d,%d)", 
-                       execNum, currentColor.r, currentColor.g, currentColor.b)
-                executorChanged = true
-                colorChanged = true
-            end
-            
-            -- Mark executor as changed if any property changed
-            if executorChanged then
-                changedExecutors[execNum] = true
-            end
+        local execInfo = executorStates[execNum]
+        local isPopulated = execInfo.isPopulated
+        local currentOnState = execInfo.isOn
+        local currentColor = execInfo.color
+        
+        -- Get cached state for comparison 
+        local cachedPopulated, cachedOn, cachedColorR, cachedColorG, cachedColorB = getCachedExecutorState(currentPageNum, execNum)
+        
+        local executorChanged = false
+        
+        -- Check if status changed from cached state
+        if (cachedPopulated ~= isPopulated) or (cachedOn ~= currentOnState) then
+            DebugPrint("[CHANGE] Executor %d: Status changed (Populated: %s, On: %s)", 
+                   execNum, isPopulated and "true" or "false", currentOnState and "true" or "false")
+            executorChanged = true
+            contentChanged = true
+            stateChanged = true
+        end
+        
+        -- Check if color changed from cached state
+        if (cachedColorR ~= currentColor.r) or (cachedColorG ~= currentColor.g) or (cachedColorB ~= currentColor.b) then
+            DebugPrint("[CHANGE] Executor %d: Color changed to RGB(%d,%d,%d)", 
+                   execNum, currentColor.r, currentColor.g, currentColor.b)
+            executorChanged = true
+            colorChanged = true
+        end
+        
+        -- Mark executor as changed if any property changed
+        if executorChanged then
+            changedExecutors[execNum] = true
+        end
     end
     
     -- Send feedback if anything changed (but not for page changes - handled above)
@@ -549,7 +567,7 @@ local function checkForExecutorChanges()
         coroutine.yield(0.1) -- 100ms delay
         
         DebugPrint("=== Sending MIDI updates ===")
-        sendChangedExecutors()
+        sendChangedExecutors(executorStates)
     end
 end
 
@@ -667,7 +685,7 @@ local function createMidiRemotes(chosenPressKey)
 end
 
 
-local function parseMidiRemotes()
+local function parseMidiRemotes(executorStates)
     -- Cache XKey remotes on first run, then only process cached ones
     
     if not remoteCacheComplete then
@@ -723,7 +741,8 @@ local function parseMidiRemotes()
                 exec.page = currentCyclePageNum
                 
                 -- Always update the target object
-                local currentObject = getDirectExecutorInfo(exec.id).object
+                local execInfo = executorStates[exec.id]
+                local currentObject = execInfo and execInfo.object or nil
                 if remote.target ~= currentObject then
                     remote.target = currentObject
                 end
@@ -747,7 +766,7 @@ local function parseMidiRemotes()
                         if remote.key ~= "" then
                             remote.key = ""
                         end
-                        local currentFaderRef = getDirectExecutorInfo(exec.id).faderRef
+                        local currentFaderRef = execInfo and execInfo.faderRef or nil
                         if remote.fader ~= currentFaderRef then
                             remote.fader = currentFaderRef
                         end
@@ -772,9 +791,10 @@ end
 loop = function()
     while running do
         currentCyclePageNum = CurrentExecPage().no
+        local executorStates = collectExecutorStates(currentCyclePageNum)
         
-        parseMidiRemotes()
-        checkForExecutorChanges()
+        parseMidiRemotes(executorStates)
+        checkForExecutorChanges(executorStates)
         coroutine.yield(rate)
     end
 end
@@ -866,7 +886,7 @@ function main()
             Printf("    127 = Populated and on")
             Printf("  RGB: XKeys 1-16 use CC 17-64 (3 CCs each)")
             Printf("Page Changes on Channel %d:", pageMidiChannel)
-            Printf("  CC 1 = Current page number (1-127)")
+            Printf("  CC 1 = Page LSB, CC 2 = Page MSB (14-bit page number)")
             Printf("  Smart fader sync for XKeys 1-8 (Channel %d, CC %d-%d)", midiChannel, startingCC, (startingCC + 7))
             Printf("  NOTE: Restart this script if you reset the Teensy OR change MIDI remote names to resync!")
             loop()

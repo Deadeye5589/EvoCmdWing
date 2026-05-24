@@ -181,7 +181,7 @@ void updateXKeyLEDs() {
   bool ledChanged = false;
   
   for (int i = 0; i < NUM_XKEYS; i++) {
-    ExecutorStatus* status = &pageData[currentPage][i];
+    ExecutorStatus* status = &xkeyStatus[i];
     
     if (!status->isPopulated) {
       // Key not populated - turn LEDs off

@@ -82,13 +82,13 @@ extern bool hasPendingLEDUpdate;
 
 
 // ================================
-// PAGE-BASED EXECUTOR STATUS DATA STRUCTURE
+// CURRENT-PAGE EXECUTOR STATUS DATA STRUCTURE
 // ================================
 // Structure to hold executor status information from grandMA3
 // Receives data on MIDI channel 2 using optimized CC mapping:
 // - Status: XKeys 1-16 use CC 1-16 (combined populated/on state)
 // - RGB: XKeys 1-16 use CC 17-64 (3 CCs each, only when populated)
-// Page changes received on MIDI channel 3, CC 1 (page number 1-127)
+// Page changes received on MIDI channel 3, CC 1/2 as 14-bit page number
 struct ExecutorStatus {
   bool isOn;           // On/off state of executor
   bool isPopulated;    // Whether executor has sequence assigned
@@ -97,15 +97,11 @@ struct ExecutorStatus {
   uint8_t blue;        // Blue (0-127 MIDI range)
 };
 
-// Page-based storage for up to 127 pages, 16 XKeys each
-// pageData[page][xkey] where page = 0-126 (for pages 1-127), xkey = 0-15 (for XKeys 1-16)
-extern ExecutorStatus pageData[127][16];
+// Current-page storage for 16 XKeys
+extern ExecutorStatus xkeyStatus[16];
 
-// Current page tracking (1-127, but stored as 0-126 index)
+// Current page tracking (1-based page number)
 extern int currentPage;
-
-// Current active status (points to current page data for convenience)
-extern ExecutorStatus* xkeyStatus;
 
 // ================================
 // ENCODER MANAGEMENT
