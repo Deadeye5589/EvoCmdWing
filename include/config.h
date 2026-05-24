@@ -11,7 +11,7 @@ typedef unsigned char byte;
 // ================================
 // PROJECT INFORMATION
 // ================================
-const char* const PROJECT_VERSION = "0.2";
+const char* const PROJECT_VERSION = "0.2.5";
 const char* const PROJECT_NAME = "EvoCmdWing";
 
 // ================================

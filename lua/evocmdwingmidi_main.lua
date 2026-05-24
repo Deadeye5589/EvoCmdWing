@@ -1,4 +1,4 @@
--- EvoCmdWingMidi v0.2
+-- EvoCmdWingMidi v0.2.5
 -- This lua script will poll midi remotes in grandma3 for the name XKeyRotate1-8 and XKeyPress1-8
 -- XKeyRotate remotes handle fader control from encoders with MIDI feedback of current fader value
 -- XKeyPress remotes target the same sequences but allow manual key configuration (press for toggle/on/off etc..)
@@ -845,7 +845,7 @@ end
 local function StartGui(config)
     local debugText = debugMode and "Debug: ON" or "Debug: OFF"
     local descTable = {
-        title = "EvoCmdWingMidi v0.2",
+        title = "EvoCmdWingMidi v0.2.5",
         caller = GetFocusDisplay(),
         items = {"Start","Stop", debugText},
         selectedValue = "Start",
@@ -875,7 +875,7 @@ function main()
             clearAllCachedState()
             
             running = true
-            Printf("Starting -- EvoCmdWingMidi v0.2...")
+            Printf("Starting -- EvoCmdWingMidi v0.2.5...")
             Printf("Monitoring: Executors 191-198 and 291-298")
             Printf("XKeyRotate1-8: MIDI Channel %d, CC %d-%d (with feedback)", midiChannel, startingCC, (startingCC + 7))
             Printf("XKeyPress1-8: MIDI Channel %d, CC %d-%d (no feedback)", midiChannel, startingCC, (startingCC + 7))
@@ -893,7 +893,7 @@ function main()
         end
     elseif name == "Stop" then
         running = false
-        Printf("Stopping -- EvoCmdWingMidi v0.2...")
+        Printf("Stopping -- EvoCmdWingMidi v0.2.5...")
     elseif name == "Create MIDI Remotes" then
         local picked = promptXKeyPressKey("Toggle")
         if picked == nil then
