@@ -78,32 +78,6 @@ void handleIncomingMIDI() {
   }
 }
 
-// ================================
-// PAGE CHANGE MIDI HANDLER
-// ================================
-static void refreshCurrentPageLEDs() {
-  bool anyLEDChanged = false;
-  for (int i = 0; i < NUM_XKEYS; i++) {
-    ExecutorStatus* status = &xkeyStatus[i];
-
-    if (!status->isPopulated) {
-      setXKeyLED(i, 0, 0, 0, 0.0);
-      anyLEDChanged = true;
-    } else if (!status->isOn) {
-      setXKeyLED(i, status->red, status->green, status->blue, config.offBrightness);
-      anyLEDChanged = true;
-    } else {
-      setXKeyLED(i, status->red, status->green, status->blue, config.onBrightness);
-      anyLEDChanged = true;
-    }
-  }
-
-  if (anyLEDChanged) {
-    showStrip();
-    debugPrintf("[LED] Page %d loaded - all LEDs updated", currentPage);
-  }
-}
-
 // Handles MIDI Channel 3 data for page changes
 // CC 1/2 = Current page number as 14-bit value (LSB/MSB, zero-based on wire)
 // Lua sends MSB first, then LSB. Apply the page change when LSB arrives.
