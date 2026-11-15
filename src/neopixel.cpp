@@ -8,27 +8,37 @@
 // ================================
 
 // Default LED mapping - can be manually adjusted if physical layout differs
-// Starting after logo pixels (6) (pixels 0-5), then skip 1, then 2 LEDs per key with 1 skip between
-XKeyLEDMapping xkeyLEDMap[NUM_XKEYS] = {
-  {7, 8},     // XKey 1
-  {10, 11},   // XKey 2
-  {13, 14},   // XKey 3
-  {16, 17},   // XKey 4
+// X-key LEDs follow the logo LEDs contiguously (pixel indices 6-21)
+int xkeyPixelMap[NUM_XKEYS] = {
+  6,  //XKEY1
+  7,  //XKEY2
+  8,  //XKEY3 
+  9,  //XKEY4
   
-  {20, 21},   // XKey 5
-  {23, 24},   // XKey 6
-  {26, 27},   // XKey 7
-  {29, 30},   // XKey 8
+  10,  //XKEY5 
+  11,  //XKEY6
+  12,  //XKEY7 
+  13,  //XKEY8
+  
+  14,  //XKEY9
+  15,  //XKEY10 
+  16,  //XKEY11 
+  17,  //XKEY12
+  
+  18,  //XKEY13 
+  19,  //XKEY14 
+  20,  //XKEY15 
+  21   //XKEY16
+};
 
-  {32, 33},   // XKey 9
-  {35, 36},   // XKey 10
-  {38, 39},   // XKey 11
-  {41, 42},   // XKey 12
-
-  {45, 46},   // XKey 13
-  {48, 49},   // XKey 14
-  {51, 52},   // XKey 15
-  {54, 55}    // XKey 16
+int keyboardPixelMap[NUM_BTN_LEDS] = {
+  22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+  32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
+  42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
+  52, 53, 54, 55, 56, 57, 58, 59, 60, 61,
+  62, 63, 64, 65, 66, 67, 68, 69, 70, 71,
+  72, 73, 74, 75, 76, 77, 78, 79, 80, 81,
+  82, 83, 84, 85, 86, 87, 88, 89, 90
 };
 
 // Note: Brightness controls moved to config struct in eeprom.h
@@ -39,6 +49,7 @@ bool hasPendingLEDUpdate = false;
 
 // NeoPixel strip object
 Adafruit_NeoPixel strip(TOTAL_PIXELS, LED_PIN, NEO_RGB + NEO_KHZ800);
+Adafruit_NeoPixel tooglebutton(1, LATCH_LED_PIN, NEO_RGB + NEO_KHZ800);
 
 // ================================
 // NEOPIXEL LED CONTROL FUNCTIONS
@@ -49,8 +60,13 @@ Adafruit_NeoPixel strip(TOTAL_PIXELS, LED_PIN, NEO_RGB + NEO_KHZ800);
 void initializeLEDs() {
   strip.begin();
   strip.setBrightness(255);
+
+  tooglebutton.begin();
+  tooglebutton.setBrightness(255);
+
   clearAllLEDs();
   strip.show();
+  tooglebutton.show();
   
   debugPrintf("[LED] Initialized %d pixel strip on pin %d", TOTAL_PIXELS, LED_PIN);
 }
@@ -61,6 +77,8 @@ void clearAllLEDs() {
     strip.setPixelColor(i, strip.Color(0, 0, 0));
   }
   strip.show();
+  tooglebutton.setPixelColor(0, tooglebutton.Color(0,0,0));
+  tooglebutton.show();
   debugPrint("[LED] All LEDs cleared");
 }
 
@@ -72,6 +90,19 @@ void setLogoPixels(uint8_t red, uint8_t green, uint8_t blue, float brightness) {
   uint8_t scaledBlue = (uint8_t)((blue * 2) * brightness);
   
   for (int i = 0; i < NUM_LOGO_PIXELS; i++) {
+    strip.setPixelColor(i, strip.Color(scaledRed, scaledGreen, scaledBlue));
+  }
+  
+  strip.show();
+
+}
+
+void setKeyboardPixels(uint8_t red, uint8_t green, uint8_t blue, float brightness) {
+  uint8_t scaledRed = (uint8_t)((red * 2) * brightness);
+  uint8_t scaledGreen = (uint8_t)((green * 2) * brightness);
+  uint8_t scaledBlue = (uint8_t)((blue * 2) * brightness);
+  
+  for (int i = TOTAL_PIXELS - NUM_BTN_LEDS; i < TOTAL_PIXELS; i++) {
     strip.setPixelColor(i, strip.Color(scaledRed, scaledGreen, scaledBlue));
   }
   
@@ -153,13 +184,7 @@ void setXKeyLED(int xkeyIndex, uint8_t red, uint8_t green, uint8_t blue, float b
   // Use HSV scaling
   uint32_t scaledColor = getScaledColor(red, green, blue, brightness);
   
-  // Get the pixels for this X-key
-  int firstPixel = xkeyLEDMap[xkeyIndex].firstPixelIndex;
-  int secondPixel = xkeyLEDMap[xkeyIndex].secondPixelIndex;
-  
-  // Set both LEDs for this X-key to the same color
-  strip.setPixelColor(firstPixel, scaledColor);
-  strip.setPixelColor(secondPixel, scaledColor);
+  strip.setPixelColor(xkeyPixelMap[xkeyIndex], scaledColor);
   
 }
 

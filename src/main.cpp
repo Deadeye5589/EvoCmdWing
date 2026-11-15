@@ -31,6 +31,7 @@ void setup() {
   xkeyFadeSequenceBounce(50, 1000, 2, 0);  
 
   setLogoPixels(127, 64, 0, config.logoBrightness); // orange
+  setKeyboardPixels(0,127,64,config.logoBrightness); 
 
   debugPrint("Setup complete");
 }

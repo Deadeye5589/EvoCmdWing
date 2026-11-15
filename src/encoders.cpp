@@ -82,9 +82,6 @@ void initializeEncoders() {
   for (int i = 0; i < N_BUTTONS; i++) {
     pinMode(BUTTON_PIN[i], INPUT_PULLUP);
   }
-  
-  pinMode(LATCH_LED_PIN, OUTPUT);
-  digitalWrite(LATCH_LED_PIN, LOW);
 }
 
 // Handles encoder moves (every 4 in the same direction) and sends midi output
@@ -137,7 +134,13 @@ void handleButtons() {
               if (holdDuration < ENCODER_FLIP_HOLD_DURATION) {
                 latchButtonState = !latchButtonState;
                 velocity = latchButtonState ? 127 : 0;
-                digitalWrite(LATCH_LED_PIN, latchButtonState ? HIGH : LOW);
+                if(latchButtonState){
+                  tooglebutton.setPixelColor(0, tooglebutton.Color(255,0,0));
+                }
+                else{
+                  tooglebutton.setPixelColor(0, tooglebutton.Color(0,255,0));
+                }
+                  tooglebutton.show();
                 
                 debugPrintf("[LATCH BUTTON] Quick press - State: %s | LED: %s", 
                            latchButtonState ? "ON" : "OFF", 

@@ -9,6 +9,8 @@
 // NEOPIXEL LED CONTROL FUNCTIONS
 // ================================
 
+extern Adafruit_NeoPixel tooglebutton;
+
 void initializeLEDs();
 
 void updateXKeyLEDs();
@@ -18,6 +20,7 @@ void setXKeyLED(int xkeyIndex, uint8_t red, uint8_t green, uint8_t blue, float b
 uint32_t getScaledColor(uint8_t red, uint8_t green, uint8_t blue, float brightness);
 
 void setLogoPixels(uint8_t red, uint8_t green, uint8_t blue, float brightness);
+void setKeyboardPixels(uint8_t red, uint8_t green, uint8_t blue, float brightness);
 void clearAllLEDs();
 void xkeyFadeSequenceBounce(unsigned long STAGGER_DELAY, unsigned long COLOR_CYCLE_TIME, int cycles, int bounces);
 void showStrip();

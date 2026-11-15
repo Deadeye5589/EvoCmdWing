@@ -18,7 +18,7 @@ const char* const PROJECT_NAME = "EvoCmdWing";
 // PIN DEFINITIONS
 // ================================
 const int LED_PIN = 10;              // NeoPixel data pin
-const int LATCH_LED_PIN = 13;        // GPIO pin for latching inner outter flip button
+const int LATCH_LED_PIN = 13;        // NeoPixel pin for latching inner outter flip button
 
 // ================================
 // ENCODER/BUTTON CONFIGURATION
@@ -55,20 +55,14 @@ extern byte midiCh;
 // ================================
 const int NUM_LOGO_PIXELS = 6;       // Number of pixels in logo section
 const int NUM_XKEYS = 16;            // Number of X-keys
-const int LEDS_PER_XKEY = 2;         // LEDs per X-key
-const int NUM_OFF_LEDS = 18;         // Number of pixels that need to be skiped (both strips need to skip the first and 1 between each key and 2 between the larger gap)
-const int TOTAL_PIXELS = (NUM_LOGO_PIXELS + (NUM_XKEYS * LEDS_PER_XKEY) + NUM_OFF_LEDS); // Logo + XKey LEDs + spacer pixels
+const int LEDS_PER_XKEY = 1;         // LEDs per X-key
+const int NUM_BTN_LEDS = 69;
+const int TOTAL_PIXELS = (NUM_LOGO_PIXELS + (NUM_XKEYS * LEDS_PER_XKEY) + NUM_BTN_LEDS);
 
-// LED mapping structure for X-key to pixel index conversion
-// Each X-key has a start index for its first LED
-// Layout: [6 logo pixels][skip][2 xkey1 LEDs][skip][2 xkey2 LEDs][skip][2 xkey3 LEDs][skip][2 xkey4 LEDs][skip * 2]....
-struct XKeyLEDMapping {
-  int firstPixelIndex;              // Index of first LED for this X-key
-  int secondPixelIndex;             // Index of second LED for this X-key
-};
-
+// Layout: [6 logo pixels][16 XKEY][85 Keyboard Buttons]
 // Default LED mapping - can be manually adjusted if physical layout differs
-extern XKeyLEDMapping xkeyLEDMap[NUM_XKEYS];
+extern int xkeyPixelMap[NUM_XKEYS];
+extern int keyboardPixelMap[NUM_BTN_LEDS];
 
 // Note: Brightness controls are now in the config struct (eeprom.h)
 
