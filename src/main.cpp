@@ -30,8 +30,12 @@ void setup() {
   
   xkeyFadeSequenceBounce(50, 1000, 2, 0);  
 
-  setLogoPixels(127, 64, 0, config.logoBrightness); // orange
-  setKeyboardPixels(0,127,64,config.logoBrightness); 
+  setLogoPixels(config.logoRed, config.logoGreen, config.logoBlue, config.logoBrightness);
+  setKeyboardPixels(config.btnRed, config.btnGreen, config.btnBlue, config.btnBrightness);
+  for(int i = 0; i < LATCH_LED_COUNT; i++){
+    tooglebutton.setPixelColor(i,tooglebutton.Color(LATCH_LED_OFF_RED, LATCH_LED_OFF_GREEN, LATCH_LED_OFF_BLUE));
+  }
+  tooglebutton.show();
 
   debugPrint("Setup complete");
 }

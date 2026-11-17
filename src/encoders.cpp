@@ -135,10 +135,12 @@ void handleButtons() {
                 latchButtonState = !latchButtonState;
                 velocity = latchButtonState ? 127 : 0;
                 if(latchButtonState){
-                  tooglebutton.setPixelColor(0, tooglebutton.Color(255,0,0));
+                  tooglebutton.setPixelColor(0, tooglebutton.Color(
+                      LATCH_LED_ON_RED, LATCH_LED_ON_GREEN, LATCH_LED_ON_BLUE));
                 }
                 else{
-                  tooglebutton.setPixelColor(0, tooglebutton.Color(0,255,0));
+                  tooglebutton.setPixelColor(0, tooglebutton.Color(
+                      LATCH_LED_OFF_RED, LATCH_LED_OFF_GREEN, LATCH_LED_OFF_BLUE));
                 }
                   tooglebutton.show();
                 
@@ -178,14 +180,14 @@ void sendMidiEncoder(int index, int direction) {
   if (elapsed < 5) return;  // Skip if less than 5ms since last move, keep from dumping buffer all at once issue we sometimes have got
   lastMoveTime[index] = now;
 
-  // Special handling for encoders 5, 6, 11, 12 and 13 when button 14 is held (brightness/sensitivity adjustment)
-  if ((index == 4 || index == 5 || index == 10 || index == 11 || index == 12) && adjustMode) {
+  // Special handling for encoder indices 1-4 and 5-12 when button 14 is held (brightness/sensitivity/color adjustment)
+  if (index >= 1 && adjustMode) {
     // Calculate step size using same velocity scaling as normal encoders
     int level = constrain((int)(elapsed / 15), 0, 7);
     int baseStep = VELOCITY_SCALES[4][7 - level]; // Use level 5 scale for consistent adjustment speed
     
-    if (index == 4) {
-      // Encoder 5 controls relativeEncoderSensitivity
+    if (index == 1) {
+      // Encoder 1 controls relativeEncoderSensitivity
       sensitivityMode = true;  // Block normal LED updates
       int step = (baseStep > 3) ? 1 : 1; // Always step by 1 for sensitivity settings
       if (direction > 0) {
@@ -194,10 +196,10 @@ void sendMidiEncoder(int index, int direction) {
         config.relativeEncoderSensitivity = constrain(config.relativeEncoderSensitivity - step, 1, 8);
       }
       updateSensitivityLEDs();
-      debugPrintf("[RELATIVE SENSITIVITY] Encoder 5 → Level: %d", config.relativeEncoderSensitivity);
+      debugPrintf("[RELATIVE SENSITIVITY] Encoder 1 → Level: %d", config.relativeEncoderSensitivity);
       
-    } else if (index == 5) {
-      // Encoder 6 controls absoluteEncoderSensitivity  
+    } else if (index == 2) {
+      // Encoder 2 controls absoluteEncoderSensitivity  
       sensitivityMode = true;  // Block normal LED updates
       int step = (baseStep > 3) ? 1 : 1; // Always step by 1 for sensitivity settings
       if (direction > 0) {
@@ -206,23 +208,10 @@ void sendMidiEncoder(int index, int direction) {
         config.absoluteEncoderSensitivity = constrain(config.absoluteEncoderSensitivity - step, 1, 8);
       }
       updateSensitivityLEDs();
-      debugPrintf("[ABSOLUTE SENSITIVITY] Encoder 6 → Level: %d", config.absoluteEncoderSensitivity);
+      debugPrintf("[ABSOLUTE SENSITIVITY] Encoder 2 → Level: %d", config.absoluteEncoderSensitivity);
       
-    } else if (index == 10) {
-      // Encoder 11 controls logoBrightness
-      sensitivityMode = false;  // Allow normal LED updates for brightness adjustment
-      float step = baseStep * 0.01f;  // Convert to 0.01 increments (1% steps)
-      if (direction > 0) {
-        config.logoBrightness = constrain(config.logoBrightness + step, 0.0f, 1.0f);
-      } else {
-        config.logoBrightness = constrain(config.logoBrightness - step, 0.0f, 1.0f);
-      }
-      setLogoPixels(127, 64, 0, config.logoBrightness);
-      debugPrintf("[BRIGHTNESS] Encoder 11 → Dir: %s | Logo brightness: %.2f | Step: %.2f", 
-                 direction > 0 ? "+" : "-", config.logoBrightness, step);
-
-    } else if (index == 11) {
-      // Encoder 12 controls offBrightness (populated but off state)
+      } else if (index == 3) {
+      // Encoder 3 controls offBrightness (populated but off state)
       sensitivityMode = false;  // Allow normal LED updates for brightness adjustment
       float step = baseStep * 0.01f;  // Convert to 0.01 increments (1% steps)
       if (direction > 0) {
@@ -231,11 +220,11 @@ void sendMidiEncoder(int index, int direction) {
         config.offBrightness = constrain(config.offBrightness - step, 0.0f, 1.0f);
       }
       updateXKeyLEDs();
-      debugPrintf("[BRIGHTNESS] Encoder 12 → Dir: %s | Off brightness: %.2f | Step: %.2f", 
+      debugPrintf("[BRIGHTNESS] Encoder 3 → Dir: %s | Off brightness: %.2f | Step: %.2f", 
                  direction > 0 ? "+" : "-", config.offBrightness, step);
 
-    } else if (index == 12) {
-      // Encoder 13 controls onBrightness (populated and on state)
+    } else if (index == 4) {
+      // Encoder 4 controls onBrightness (populated and on state)
       sensitivityMode = false;  // Allow normal LED updates for brightness adjustment
       float step = baseStep * 0.01f;  // Convert to 0.01 increments (1% steps)
       if (direction > 0) {
@@ -244,8 +233,52 @@ void sendMidiEncoder(int index, int direction) {
         config.onBrightness = constrain(config.onBrightness - step, 0.0f, 1.0f);
       }
       updateXKeyLEDs();
-      debugPrintf("[BRIGHTNESS] Encoder 13 → Dir: %s | On brightness: %.2f | Step: %.2f", 
+      debugPrintf("[BRIGHTNESS] Encoder 4 → Dir: %s | On brightness: %.2f | Step: %.2f", 
                  direction > 0 ? "+" : "-", config.onBrightness, step);
+    
+    } else if (index >= 5 && index <= 7) {
+      // Encoders 6/7/8 (index 5/6/7) control logo red/green/blue
+      sensitivityMode = false;
+      uint8_t* channel = (index == 5) ? &config.logoRed : (index == 6) ? &config.logoGreen : &config.logoBlue;
+      *channel = constrain((int)*channel + direction * baseStep, 0, 127);
+      setLogoPixels(config.logoRed, config.logoGreen, config.logoBlue, config.logoBrightness);
+      debugPrintf("[COLOR] Encoder %d → Logo RGB: %d, %d, %d",
+                 index + 1, config.logoRed, config.logoGreen, config.logoBlue);
+
+    } else if (index == 8) {
+      // Encoder 9 (index 8) controls logoBrightness
+      sensitivityMode = false;  // Allow normal LED updates for brightness adjustment
+      float step = baseStep * 0.01f;  // Convert to 0.01 increments (1% steps)
+      if (direction > 0) {
+        config.logoBrightness = constrain(config.logoBrightness + step, 0.0f, 1.0f);
+      } else {
+        config.logoBrightness = constrain(config.logoBrightness - step, 0.0f, 1.0f);
+      }
+      setLogoPixels(config.logoRed, config.logoGreen, config.logoBlue, config.logoBrightness);
+      debugPrintf("[BRIGHTNESS] Encoder 9 → Dir: %s | Logo brightness: %.2f | Step: %.2f", 
+                 direction > 0 ? "+" : "-", config.logoBrightness, step);
+
+    } else if (index >= 9 && index <= 11) {
+      // Encoders 10/11/12 (index 9/10/11) control button LED red/green/blue
+      sensitivityMode = false;
+      uint8_t* channel = (index == 9) ? &config.btnRed : (index == 10) ? &config.btnGreen : &config.btnBlue;
+      *channel = constrain((int)*channel + direction * baseStep, 0, 127);
+      setKeyboardPixels(config.btnRed, config.btnGreen, config.btnBlue, config.btnBrightness);
+      debugPrintf("[COLOR] Encoder %d → Button RGB: %d, %d, %d",
+                 index + 1, config.btnRed, config.btnGreen, config.btnBlue);
+
+    } else if (index == 12) {
+      // Encoder 13 (index 12) controls btnBrightness
+      sensitivityMode = false;
+      float step = baseStep * 0.01f;
+      if (direction > 0) {
+        config.btnBrightness = constrain(config.btnBrightness + step, 0.0f, 1.0f);
+      } else {
+        config.btnBrightness = constrain(config.btnBrightness - step, 0.0f, 1.0f);
+      }
+      setKeyboardPixels(config.btnRed, config.btnGreen, config.btnBlue, config.btnBrightness);
+      debugPrintf("[BRIGHTNESS] Encoder 13 → Dir: %s | Button brightness: %.2f | Step: %.2f",
+                 direction > 0 ? "+" : "-", config.btnBrightness, step);
     }
     
     // Don't send MIDI in adjustment mode

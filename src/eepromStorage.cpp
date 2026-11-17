@@ -8,12 +8,19 @@
 
 const ConfigData defaultConfig = {
   .signature = CONFIG_SIGNATURE,
-  .version = 1,
+  .version = 2,
   .relativeEncoderSensitivity = 5,
   .absoluteEncoderSensitivity = 5,
   .onBrightness = 1.0f,
   .offBrightness = 0.05f,
-  .logoBrightness = 1.0f
+  .logoBrightness = 1.0f,
+  .btnBrightness = 1.0f,
+  .logoRed = 127,
+  .logoGreen = 64,
+  .logoBlue = 0,
+  .btnRed = 0,
+  .btnGreen = 127,
+  .btnBlue = 64
 };
 
 // Global config instance
@@ -80,6 +87,17 @@ bool loadConfig() {
     debugPrintf("[EEPROM] Invalid logoBrightness: %.2f", config.logoBrightness);
     return false;
   }
+
+  if (config.btnBrightness < 0.0f || config.btnBrightness > 1.0f) {
+    debugPrintf("[EEPROM] Invalid btnBrightness: %.2f", config.btnBrightness);
+    return false;
+  }
+
+  if (config.logoRed > 127 || config.logoGreen > 127 || config.logoBlue > 127 ||
+      config.btnRed > 127 || config.btnGreen > 127 || config.btnBlue > 127) {
+    debugPrint("[EEPROM] Invalid LED color value");
+    return false;
+  }
   
   debugPrint("[EEPROM] Configuration validation passed");
   return true;
@@ -111,4 +129,7 @@ void printConfig() {
   debugPrintf("  On Brightness: %.2f", config.onBrightness);
   debugPrintf("  Off Brightness: %.2f", config.offBrightness);
   debugPrintf("  Logo Brightness: %.2f", config.logoBrightness);
+  debugPrintf("  Logo Color (R,G,B): %d, %d, %d", config.logoRed, config.logoGreen, config.logoBlue);
+  debugPrintf("  Button Brightness: %.2f", config.btnBrightness);
+  debugPrintf("  Button Color (R,G,B): %d, %d, %d", config.btnRed, config.btnGreen, config.btnBlue);
 }

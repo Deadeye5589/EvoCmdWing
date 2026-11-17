@@ -11,6 +11,13 @@
 
 extern Adafruit_NeoPixel tooglebutton;
 
+const uint8_t LATCH_LED_ON_RED = 0;
+const uint8_t LATCH_LED_ON_GREEN = 255;
+const uint8_t LATCH_LED_ON_BLUE = 0;
+const uint8_t LATCH_LED_OFF_RED = 255;
+const uint8_t LATCH_LED_OFF_GREEN = 0;
+const uint8_t LATCH_LED_OFF_BLUE = 0;
+
 void initializeLEDs();
 
 void updateXKeyLEDs();

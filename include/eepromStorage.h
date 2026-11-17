@@ -22,7 +22,15 @@ struct ConfigData {
   float onBrightness;                    // Default 1.0
   float offBrightness;                   // Default 0.05
   float logoBrightness;                  // Default 1.0
-  
+  float btnBrightness;                   // Default 1.0
+
+  // LED colors (0-127 MIDI range)
+  uint8_t logoRed;                       // Default 127
+  uint8_t logoGreen;                     // Default 64
+  uint8_t logoBlue;                      // Default 0
+  uint8_t btnRed;                        // Default 0
+  uint8_t btnGreen;                      // Default 127
+  uint8_t btnBlue;                       // Default 64
 };
 
 // Default configuration values

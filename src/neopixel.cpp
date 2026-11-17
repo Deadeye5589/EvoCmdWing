@@ -49,7 +49,7 @@ bool hasPendingLEDUpdate = false;
 
 // NeoPixel strip object
 Adafruit_NeoPixel strip(TOTAL_PIXELS, LED_PIN, NEO_RGB + NEO_KHZ800);
-Adafruit_NeoPixel tooglebutton(1, LATCH_LED_PIN, NEO_RGB + NEO_KHZ800);
+Adafruit_NeoPixel tooglebutton(LATCH_LED_COUNT, LATCH_LED_PIN, NEO_RGB + NEO_KHZ800);
 
 // ================================
 // NEOPIXEL LED CONTROL FUNCTIONS
@@ -65,19 +65,23 @@ void initializeLEDs() {
   tooglebutton.setBrightness(255);
 
   clearAllLEDs();
+  
   strip.show();
   tooglebutton.show();
   
   debugPrintf("[LED] Initialized %d pixel strip on pin %d", TOTAL_PIXELS, LED_PIN);
+  debugPrintf("[Toggle LED] Initialized %d LED on pin %d", LATCH_LED_COUNT, LATCH_LED_PIN);
 }
 
-// Clear all LEDs on the strip (set to black/off)
+// Clear all LEDs on the PCB (set to black/off)
 void clearAllLEDs() {
   for (int i = 0; i < TOTAL_PIXELS; i++) {
     strip.setPixelColor(i, strip.Color(0, 0, 0));
   }
   strip.show();
-  tooglebutton.setPixelColor(0, tooglebutton.Color(0,0,0));
+  for (int j = 0; j < LATCH_LED_COUNT; j++) {
+    tooglebutton.setPixelColor(j, tooglebutton.Color(0,0,0));
+  }
   tooglebutton.show();
   debugPrint("[LED] All LEDs cleared");
 }
@@ -90,7 +94,8 @@ void setLogoPixels(uint8_t red, uint8_t green, uint8_t blue, float brightness) {
   uint8_t scaledBlue = (uint8_t)((blue * 2) * brightness);
   
   for (int i = 0; i < NUM_LOGO_PIXELS; i++) {
-    strip.setPixelColor(i, strip.Color(scaledRed, scaledGreen, scaledBlue));
+    // Since the Logo LEDs have a different color order, we need to swap them here to be correct again
+    strip.setPixelColor(i, strip.Color(scaledGreen, scaledRed, scaledBlue));
   }
   
   strip.show();
@@ -233,178 +238,173 @@ void showStrip() {
 }
 
 
-// XKey startup fade sequence with rainbow wave effect AND bouncing
-void xkeyFadeSequenceBounce(unsigned long STAGGER_DELAY, unsigned long COLOR_CYCLE_TIME, int cycles, int bounces) {
-  
-  const int NUM_GROUPS = 8;  // 8 groups of paired XKeys
-  unsigned long startTime = millis();
-  bool animationComplete = false;
-  
-  // Calculate total animation time for all cycles and bounces
-  unsigned long totalCycleTime = COLOR_CYCLE_TIME + 250;
-  unsigned long singleWaveTime = (NUM_GROUPS - 1) * STAGGER_DELAY + totalCycleTime;
-  
+// ================================
+// FADE SEQUENCE GROUP DEFINITIONS
+// ================================
+// Each group lists raw strip pixel indices (0..TOTAL_PIXELS-1) in any order and any count.
+// The wave runs through the groups in the order they appear in fadeGroups[].
+static const uint16_t fadeGroup1[]  = { 22, 27, 32, 3, 2 };
+static const uint16_t fadeGroup2[]  = { 4, 1, 67, 72, 81};
+static const uint16_t fadeGroup3[]  = { 23, 28, 33, 5, 0 };
+static const uint16_t fadeGroup4[]  = { 24, 29, 34, 37, 40, 50, 65, 73, 83 };
+static const uint16_t fadeGroup5[]  = { 25, 30, 35, 38, 41, 51, 60, 74 };
+static const uint16_t fadeGroup6[]  = { 6, 14, 43, 53, 62, 76, 85 };
+static const uint16_t fadeGroup7[]  = { 7, 15, 44, 54, 63, 68, 77, 86 };
+static const uint16_t fadeGroup8[]  = { 8, 16, 45, 55, 64 ,69, 78, 87 };
+static const uint16_t fadeGroup9[]  = { 9, 17, 46, 56, 65, 70, 79, 88 };
+static const uint16_t fadeGroup10[] = { 10, 18, 57, 66, 71, 80, 89 };
+static const uint16_t fadeGroup11[] = { 11, 19, 47 };
+static const uint16_t fadeGroup12[] = { 12, 20, 58, 81, 90 };
+static const uint16_t fadeGroup13[] = { 13, 21, 49, 91 };
 
-  unsigned long wavesPerCycle = 1 + (bounces * 2); // Initial L→R + bounce pairs
+struct FadeGroup {
+  const uint16_t* pixels;
+  uint8_t count;
+  bool includeToggle;  // also drive all pixels of the tooglebutton strip
+};
+
+#define FADE_GROUP(arr) { arr, (uint8_t)(sizeof(arr) / sizeof(arr[0])), false }
+#define FADE_GROUP_WITH_TOGGLE(arr) { arr, (uint8_t)(sizeof(arr) / sizeof(arr[0])), true }
+
+static const FadeGroup fadeGroups[] = {
+  FADE_GROUP_WITH_TOGGLE(fadeGroup1),
+  FADE_GROUP(fadeGroup2),
+  FADE_GROUP(fadeGroup3),
+  FADE_GROUP(fadeGroup4),
+  FADE_GROUP(fadeGroup5),
+  FADE_GROUP(fadeGroup6),
+  FADE_GROUP(fadeGroup7),
+  FADE_GROUP(fadeGroup8),
+  FADE_GROUP(fadeGroup9),
+  FADE_GROUP(fadeGroup10),
+  FADE_GROUP(fadeGroup11),
+  FADE_GROUP(fadeGroup12),
+  FADE_GROUP(fadeGroup13),
+};
+
+static const int NUM_FADE_GROUPS = sizeof(fadeGroups) / sizeof(fadeGroups[0]);
+
+static void setFadeGroupColor(const FadeGroup& group, uint32_t color) {
+  for (uint8_t i = 0; i < group.count; i++) {
+    if (group.pixels[i] < TOTAL_PIXELS) {
+      strip.setPixelColor(group.pixels[i], color);
+    }
+  }
+  if (group.includeToggle) {
+    for (int j = 0; j < LATCH_LED_COUNT; j++) {
+      tooglebutton.setPixelColor(j, color);
+    }
+  }
+}
+
+static uint32_t scaleColor(uint32_t c, float factor) {
+  return strip.Color((uint8_t)(((c >> 16) & 0xFF) * factor),
+                     (uint8_t)(((c >> 8) & 0xFF) * factor),
+                     (uint8_t)((c & 0xFF) * factor));
+}
+
+// Startup fade sequence with rainbow wave effect AND bouncing over the hand-defined groups
+void xkeyFadeSequenceBounce(unsigned long STAGGER_DELAY, unsigned long COLOR_CYCLE_TIME, int cycles, int bounces) {
+
+  const unsigned long FADE_OUT_DURATION = 250;
+  unsigned long startTime = millis();
+
+  unsigned long singleWaveTime = (NUM_FADE_GROUPS - 1) * STAGGER_DELAY + COLOR_CYCLE_TIME + FADE_OUT_DURATION;
+  unsigned long wavesPerCycle = 1 + (bounces * 2);
   unsigned long timePerCycle = wavesPerCycle * singleWaveTime;
   unsigned long fullSequenceTime = timePerCycle * cycles;
-  
-  // Store original XKey status colors and brightness
-  struct OriginalXKeyState {
-    uint8_t red, green, blue;
-    float brightness;
-  } originalStates[NUM_XKEYS];
-  
-  // Save current XKey states and start all at black
-  for (int i = 0; i < NUM_XKEYS; i++) {
-    ExecutorStatus* status = &xkeyStatus[i];
-    originalStates[i].red = status->red;
-    originalStates[i].green = status->green;
-    originalStates[i].blue = status->blue;
-    
-    // Determine original brightness based on status
-    if (!status->isPopulated) {
-      originalStates[i].brightness = 0.0;
-    } else if (status->isPopulated && !status->isOn) {
-      originalStates[i].brightness = config.offBrightness;
-    } else {
-      originalStates[i].brightness = config.onBrightness;
-    }
-    
-    // Start with black LEDs
-    setXKeyLED(i, 0, 0, 0, 0.0);
+
+  // Remember the current color of every pixel so it can be restored afterwards
+  static uint32_t originalColors[TOTAL_PIXELS];
+  for (int i = 0; i < TOTAL_PIXELS; i++) {
+    originalColors[i] = strip.getPixelColor(i);
+  }
+  static uint32_t originalToggleColors[LATCH_LED_COUNT];
+  for (int j = 0; j < LATCH_LED_COUNT; j++) {
+    originalToggleColors[j] = tooglebutton.getPixelColor(j);
+  }
+
+  for (int g = 0; g < NUM_FADE_GROUPS; g++) { 
+    setFadeGroupColor(fadeGroups[g], 0);
   }
   strip.show();
-  
-  while (!animationComplete) {
+  tooglebutton.show();
+
+  while (true) {
     unsigned long now = millis();
     unsigned long totalElapsed = now - startTime;
-    
-    // Check if we've completed all cycles and bounces
+
     if (totalElapsed >= fullSequenceTime) {
-      animationComplete = true;
       break;
     }
-    
-    animationComplete = true; // Will be set to false if any group is still animating
-    
-    // Determine which cycle and wave within cycle we're in
-    unsigned long currentCycle = totalElapsed / timePerCycle;
+
     unsigned long cycleElapsed = totalElapsed % timePerCycle;
     unsigned long currentWaveInCycle = cycleElapsed / singleWaveTime;
-    
-    bool isRightToLeft = (currentWaveInCycle % 2 == 1);
-    
-    // Process each group (0-7 representing XKey pairs 1&9, 2&10, etc.)
-    for (int group = 0; group < NUM_GROUPS; group++) {
-      // Calculate effective group index based on direction
-      int effectiveGroup = isRightToLeft ? (NUM_GROUPS - 1 - group) : group;
-      
-      // Calculate when this group should start within the current wave
+    unsigned long waveElapsed = cycleElapsed % singleWaveTime;
+    bool isReverse = (currentWaveInCycle % 2 == 1);
+
+    for (int g = 0; g < NUM_FADE_GROUPS; g++) {
+      const FadeGroup& group = fadeGroups[g];
+      int effectiveGroup = isReverse ? (NUM_FADE_GROUPS - 1 - g) : g;
       unsigned long groupStartOffset = effectiveGroup * STAGGER_DELAY;
-      unsigned long groupStartTime = startTime + (currentCycle * timePerCycle) + 
-                                   (currentWaveInCycle * singleWaveTime) + groupStartOffset;
-      
-      if (now >= groupStartTime) {
-        unsigned long elapsed = now - groupStartTime;
-        
-        // Calculate which XKeys belong to this group
-        int xkey1 = group;         // XKeys 0-7 (representing 1-8)
-        int xkey2 = group + 8;     // XKeys 8-15 (representing 9-16)
-        
-        if (elapsed < COLOR_CYCLE_TIME) {
-          // Rainbow color wave is active on this group
-          animationComplete = false;
-          
-          // Calculate color transition through rainbow spectrum
-          float colorProgress = (elapsed % COLOR_CYCLE_TIME) / (float)COLOR_CYCLE_TIME;
-          float hue = colorProgress * 360.0; // Full rainbow cycle
-          
-          // Convert HSV to RGB (Hue, Saturation=1, Value=1)
-          float c = 1.0; // Saturation at max
-          float x = c * (1.0 - fabs(fmod(hue / 60.0, 2.0) - 1.0));
-          
-          float r1, g1, b1;
-          if (hue < 60)      { r1 = c; g1 = x; b1 = 0; }
-          else if (hue < 120){ r1 = x; g1 = c; b1 = 0; }
-          else if (hue < 180){ r1 = 0; g1 = c; b1 = x; }
-          else if (hue < 240){ r1 = 0; g1 = x; b1 = c; }
-          else if (hue < 300){ r1 = x; g1 = 0; b1 = c; }
-          else               { r1 = c; g1 = 0; b1 = x; }
-          
-          // Convert to MIDI range (0-127)
-          uint8_t rainbowRed = (uint8_t)(r1 * 127);
-          uint8_t rainbowGreen = (uint8_t)(g1 * 127);
-          uint8_t rainbowBlue = (uint8_t)(b1 * 127);
-          
-          // Calculate brightness with breathing effect
-          float breatheProgress = (elapsed % COLOR_CYCLE_TIME) / (float)COLOR_CYCLE_TIME;
-          float breatheValue = (sin(breatheProgress * PI * 2) + 1.0) / 2.0; // Sine wave 0-1
-          
-          // Combine with fade-in effect
-          float fadeProgress = min(1.0f, elapsed / (float)(COLOR_CYCLE_TIME * 0.3)); // Fade in over first 30%
-          
-          float finalBrightness = breatheValue * fadeProgress;
-          
-          // Set both XKeys in this group to the same color
-          setXKeyLED(xkey1, rainbowRed, rainbowGreen, rainbowBlue, finalBrightness);
-          setXKeyLED(xkey2, rainbowRed, rainbowGreen, rainbowBlue, finalBrightness);
-          
-        } else {
-          // Wave has passed, fade out with color shift to original colors
-          unsigned long fadeOutTime = elapsed - COLOR_CYCLE_TIME;
-          const unsigned long FADE_OUT_DURATION = 250; // 250ms fade out
-          
-          if (fadeOutTime < FADE_OUT_DURATION) {
-            animationComplete = false;
-            
-            // Fade to original colors while dimming
-            float fadeProgress = fadeOutTime / (float)FADE_OUT_DURATION;
-            
-            // Process both XKeys in the group
-            for (int xkeyOffset = 0; xkeyOffset < 2; xkeyOffset++) {
-              int xkeyIndex = (xkeyOffset == 0) ? xkey1 : xkey2;
-              
-              // Blend to original color
-              uint8_t targetRed = (uint8_t)((originalStates[xkeyIndex].red * 2) * fadeProgress);
-              uint8_t targetGreen = (uint8_t)((originalStates[xkeyIndex].green * 2) * fadeProgress);
-              uint8_t targetBlue = (uint8_t)((originalStates[xkeyIndex].blue * 2) * fadeProgress);
-              
-              // Fade brightness
-              float brightnessFade = (1.0 - fadeProgress) * 0.5 + originalStates[xkeyIndex].brightness * fadeProgress;
-              
-              setXKeyLED(xkeyIndex, targetRed / 2, targetGreen / 2, targetBlue / 2, brightnessFade);
-            }
-          } else {
-            // Completely finished - restore original states
-            setXKeyLED(xkey1, originalStates[xkey1].red, originalStates[xkey1].green, 
-                      originalStates[xkey1].blue, originalStates[xkey1].brightness);
-            setXKeyLED(xkey2, originalStates[xkey2].red, originalStates[xkey2].green, 
-                      originalStates[xkey2].blue, originalStates[xkey2].brightness);
+
+      if (waveElapsed < groupStartOffset) {
+        setFadeGroupColor(group, 0);
+        continue;
+      }
+
+      unsigned long elapsed = waveElapsed - groupStartOffset;
+
+      if (elapsed < COLOR_CYCLE_TIME) {
+        float progress = elapsed / (float)COLOR_CYCLE_TIME;
+        float hue = progress * 360.0f;
+        float x = 1.0f - fabsf(fmodf(hue / 60.0f, 2.0f) - 1.0f);
+
+        float r1, g1, b1;
+        if (hue < 60)       { r1 = 1; g1 = x; b1 = 0; }
+        else if (hue < 120) { r1 = x; g1 = 1; b1 = 0; }
+        else if (hue < 180) { r1 = 0; g1 = 1; b1 = x; }
+        else if (hue < 240) { r1 = 0; g1 = x; b1 = 1; }
+        else if (hue < 300) { r1 = x; g1 = 0; b1 = 1; }
+        else                { r1 = 1; g1 = 0; b1 = x; }
+
+        float breatheValue = (sinf(progress * PI * 2) + 1.0f) / 2.0f;
+        float fadeIn = min(1.0f, progress / 0.3f);
+        float brightness = breatheValue * fadeIn * 255.0f;
+
+        setFadeGroupColor(group, strip.Color((uint8_t)(r1 * brightness),
+                                             (uint8_t)(g1 * brightness),
+                                             (uint8_t)(b1 * brightness)));
+      } else {
+        float fadeProgress = min(1.0f, (elapsed - COLOR_CYCLE_TIME) / (float)FADE_OUT_DURATION);
+
+        // Fade each pixel back in to its own original color
+        for (uint8_t i = 0; i < group.count; i++) {
+          uint16_t pixel = group.pixels[i];
+          if (pixel >= TOTAL_PIXELS) continue;
+          strip.setPixelColor(pixel, scaleColor(originalColors[pixel], fadeProgress));
+        }
+        if (group.includeToggle) {
+          for (int j = 0; j < LATCH_LED_COUNT; j++) {
+            tooglebutton.setPixelColor(j, scaleColor(originalToggleColors[j], fadeProgress));
           }
         }
-      } else {
-        // Group hasn't started yet
-        animationComplete = false;
-        int xkey1 = group;
-        int xkey2 = group + 8;
-        setXKeyLED(xkey1, 0, 0, 0, 0.0);
-        setXKeyLED(xkey2, 0, 0, 0, 0.0);
       }
     }
-    
-    // Update the LED strip
+
     strip.show();
+    tooglebutton.show();
     delay(10);
   }
-  
-  // Final cleanup - ensure all XKeys are properly restored
-  for (int i = 0; i < NUM_XKEYS; i++) {
-    setXKeyLED(i, originalStates[i].red, originalStates[i].green, 
-              originalStates[i].blue, originalStates[i].brightness);
+
+  for (int i = 0; i < TOTAL_PIXELS; i++) {
+    strip.setPixelColor(i, originalColors[i]);
+  }
+  for (int j = 0; j < LATCH_LED_COUNT; j++) {
+    tooglebutton.setPixelColor(j, originalToggleColors[j]);
   }
   strip.show();
-
+  tooglebutton.show();
 }
 
 // ================================

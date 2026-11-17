@@ -56,8 +56,9 @@ extern byte midiCh;
 const int NUM_LOGO_PIXELS = 6;       // Number of pixels in logo section
 const int NUM_XKEYS = 16;            // Number of X-keys
 const int LEDS_PER_XKEY = 1;         // LEDs per X-key
-const int NUM_BTN_LEDS = 69;
+const int NUM_BTN_LEDS = 69;         // Number of buttons
 const int TOTAL_PIXELS = (NUM_LOGO_PIXELS + (NUM_XKEYS * LEDS_PER_XKEY) + NUM_BTN_LEDS);
+const int LATCH_LED_COUNT = 1; // Number of LEDs for the latch button
 
 // Layout: [6 logo pixels][16 XKEY][85 Keyboard Buttons]
 // Default LED mapping - can be manually adjusted if physical layout differs
