@@ -134,15 +134,7 @@ void handleButtons() {
               if (holdDuration < ENCODER_FLIP_HOLD_DURATION) {
                 latchButtonState = !latchButtonState;
                 velocity = latchButtonState ? 127 : 0;
-                if(latchButtonState){
-                  tooglebutton.setPixelColor(0, tooglebutton.Color(
-                      LATCH_LED_ON_RED, LATCH_LED_ON_GREEN, LATCH_LED_ON_BLUE));
-                }
-                else{
-                  tooglebutton.setPixelColor(0, tooglebutton.Color(
-                      LATCH_LED_OFF_RED, LATCH_LED_OFF_GREEN, LATCH_LED_OFF_BLUE));
-                }
-                  tooglebutton.show();
+                updateToggleButtonLED();
                 
                 debugPrintf("[LATCH BUTTON] Quick press - State: %s | LED: %s", 
                            latchButtonState ? "ON" : "OFF", 
@@ -181,12 +173,12 @@ void sendMidiEncoder(int index, int direction) {
   lastMoveTime[index] = now;
 
   // Special handling for encoder indices 1-4 and 5-12 when button 14 is held (brightness/sensitivity/color adjustment)
-  if (index >= 1 && adjustMode) {
+  if (index != 4 && adjustMode) {
     // Calculate step size using same velocity scaling as normal encoders
     int level = constrain((int)(elapsed / 15), 0, 7);
     int baseStep = VELOCITY_SCALES[4][7 - level]; // Use level 5 scale for consistent adjustment speed
     
-    if (index == 1) {
+    if (index == 0) {
       // Encoder 1 controls relativeEncoderSensitivity
       sensitivityMode = true;  // Block normal LED updates
       int step = (baseStep > 3) ? 1 : 1; // Always step by 1 for sensitivity settings
@@ -198,7 +190,7 @@ void sendMidiEncoder(int index, int direction) {
       updateSensitivityLEDs();
       debugPrintf("[RELATIVE SENSITIVITY] Encoder 1 → Level: %d", config.relativeEncoderSensitivity);
       
-    } else if (index == 2) {
+    } else if (index == 1) {
       // Encoder 2 controls absoluteEncoderSensitivity  
       sensitivityMode = true;  // Block normal LED updates
       int step = (baseStep > 3) ? 1 : 1; // Always step by 1 for sensitivity settings
@@ -210,7 +202,7 @@ void sendMidiEncoder(int index, int direction) {
       updateSensitivityLEDs();
       debugPrintf("[ABSOLUTE SENSITIVITY] Encoder 2 → Level: %d", config.absoluteEncoderSensitivity);
       
-      } else if (index == 3) {
+      } else if (index == 2) {
       // Encoder 3 controls offBrightness (populated but off state)
       sensitivityMode = false;  // Allow normal LED updates for brightness adjustment
       float step = baseStep * 0.01f;  // Convert to 0.01 increments (1% steps)
@@ -223,7 +215,7 @@ void sendMidiEncoder(int index, int direction) {
       debugPrintf("[BRIGHTNESS] Encoder 3 → Dir: %s | Off brightness: %.2f | Step: %.2f", 
                  direction > 0 ? "+" : "-", config.offBrightness, step);
 
-    } else if (index == 4) {
+    } else if (index == 3) {
       // Encoder 4 controls onBrightness (populated and on state)
       sensitivityMode = false;  // Allow normal LED updates for brightness adjustment
       float step = baseStep * 0.01f;  // Convert to 0.01 increments (1% steps)
@@ -277,6 +269,7 @@ void sendMidiEncoder(int index, int direction) {
         config.btnBrightness = constrain(config.btnBrightness - step, 0.0f, 1.0f);
       }
       setKeyboardPixels(config.btnRed, config.btnGreen, config.btnBlue, config.btnBrightness);
+      updateToggleButtonLED();
       debugPrintf("[BRIGHTNESS] Encoder 13 → Dir: %s | Button brightness: %.2f | Step: %.2f",
                  direction > 0 ? "+" : "-", config.btnBrightness, step);
     }

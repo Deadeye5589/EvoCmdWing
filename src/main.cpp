@@ -32,10 +32,7 @@ void setup() {
 
   setLogoPixels(config.logoRed, config.logoGreen, config.logoBlue, config.logoBrightness);
   setKeyboardPixels(config.btnRed, config.btnGreen, config.btnBlue, config.btnBrightness);
-  for(int i = 0; i < LATCH_LED_COUNT; i++){
-    tooglebutton.setPixelColor(i,tooglebutton.Color(LATCH_LED_OFF_RED, LATCH_LED_OFF_GREEN, LATCH_LED_OFF_BLUE));
-  }
-  tooglebutton.show();
+  updateToggleButtonLED();
 
   debugPrint("Setup complete");
 }

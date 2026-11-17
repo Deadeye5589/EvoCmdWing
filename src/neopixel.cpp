@@ -115,6 +115,20 @@ void setKeyboardPixels(uint8_t red, uint8_t green, uint8_t blue, float brightnes
 
 }
 
+void updateToggleButtonLED() {
+  uint8_t red = latchButtonState ? LATCH_LED_ON_RED : LATCH_LED_OFF_RED;
+  uint8_t green = latchButtonState ? LATCH_LED_ON_GREEN : LATCH_LED_OFF_GREEN;
+  uint8_t blue = latchButtonState ? LATCH_LED_ON_BLUE : LATCH_LED_OFF_BLUE;
+
+  for (int i = 0; i < LATCH_LED_COUNT; i++) {
+    tooglebutton.setPixelColor(i, tooglebutton.Color(
+        (uint8_t)(red * config.btnBrightness),
+        (uint8_t)(green * config.btnBrightness),
+        (uint8_t)(blue * config.btnBrightness)));
+  }
+  tooglebutton.show();
+}
+
 // Converts RGB to HSV and scales value, then returns scaled RGB color
 // This preserves hue and saturation while scaling brightness properly
 uint32_t getScaledColor(uint8_t red, uint8_t green, uint8_t blue, float brightness) {
@@ -248,14 +262,15 @@ static const uint16_t fadeGroup2[]  = { 4, 1, 67, 72, 81};
 static const uint16_t fadeGroup3[]  = { 23, 28, 33, 5, 0 };
 static const uint16_t fadeGroup4[]  = { 24, 29, 34, 37, 40, 50, 65, 73, 83 };
 static const uint16_t fadeGroup5[]  = { 25, 30, 35, 38, 41, 51, 60, 74 };
-static const uint16_t fadeGroup6[]  = { 6, 14, 43, 53, 62, 76, 85 };
-static const uint16_t fadeGroup7[]  = { 7, 15, 44, 54, 63, 68, 77, 86 };
-static const uint16_t fadeGroup8[]  = { 8, 16, 45, 55, 64 ,69, 78, 87 };
-static const uint16_t fadeGroup9[]  = { 9, 17, 46, 56, 65, 70, 79, 88 };
-static const uint16_t fadeGroup10[] = { 10, 18, 57, 66, 71, 80, 89 };
-static const uint16_t fadeGroup11[] = { 11, 19, 47 };
-static const uint16_t fadeGroup12[] = { 12, 20, 58, 81, 90 };
-static const uint16_t fadeGroup13[] = { 13, 21, 49, 91 };
+static const uint16_t fadeGroup6[]  = { 26, 31, 36, 39, 42, 52, 61, 75 };
+static const uint16_t fadeGroup7[]  = { 6, 14, 43, 53, 62, 76, 85 };
+static const uint16_t fadeGroup8[]  = { 7, 15, 44, 54, 63, 68, 77, 86 };
+static const uint16_t fadeGroup9[]  = { 8, 16, 45, 55, 64 ,69, 78, 87 };
+static const uint16_t fadeGroup10[]  = { 9, 17, 46, 56, 65, 70, 79, 88 };
+static const uint16_t fadeGroup11[] = { 10, 18, 57, 66, 71, 80, 89 };
+static const uint16_t fadeGroup12[] = { 11, 19, 47 };
+static const uint16_t fadeGroup13[] = { 12, 20, 58, 81, 90 };
+static const uint16_t fadeGroup14[] = { 13, 21, 49, 91 };
 
 struct FadeGroup {
   const uint16_t* pixels;
@@ -280,6 +295,7 @@ static const FadeGroup fadeGroups[] = {
   FADE_GROUP(fadeGroup11),
   FADE_GROUP(fadeGroup12),
   FADE_GROUP(fadeGroup13),
+  FADE_GROUP(fadeGroup14)
 };
 
 static const int NUM_FADE_GROUPS = sizeof(fadeGroups) / sizeof(fadeGroups[0]);
