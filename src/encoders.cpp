@@ -61,6 +61,7 @@ bool midiDataPending = false;
 
 // Adjustment mode (brightness & sensitivity)
 bool adjustMode = false;                  // True when button 14 is held down for brightness/sensitivity adjustment
+bool adjustModeActive = false;            // True once the button 14 hold duration has passed
 bool sensitivityMode = false;             // True when actively adjusting sensitivity (blocks normal LED updates)
 unsigned long encoderFlipHoldTime = 0;       // Time when button 14 was pressed
 
@@ -105,6 +106,20 @@ void handleEncoders() {
 void handleButtons() {
   // Need a space to remember the Toogle Button Color when in Adjust mode
   static uint32_t toogleOriginalColors[LATCH_LED_COUNT];
+
+  // Activate adjustment mode only after the configured hold duration.
+  if (adjustMode && !adjustModeActive &&
+      (millis() - encoderFlipHoldTime) >= ENCODER_FLIP_HOLD_DURATION) {
+    adjustModeActive = true;
+
+    for (int i = 0; i < LATCH_LED_COUNT; i++) {
+      toogleOriginalColors[i] = tooglebutton.getPixelColor(i);
+      tooglebutton.setPixelColor(i, tooglebutton.Color(0, 0, 255));
+    }
+    tooglebutton.show();
+
+    debugPrint("[ADJUST] Button 14 hold duration reached - adjustment mode ON");
+  }
   
   for (int i = 0; i < N_BUTTONS; i++) {
     int reading = digitalRead(BUTTON_PIN[i]);
@@ -122,14 +137,7 @@ void handleButtons() {
               // Start tracking hold time for adjustment mode
               encoderFlipHoldTime = millis();
               adjustMode = true;
-              // Save current color of Toogle Button and switch to blue to indicate active adjust mode
-              for(int i = 0; i < LATCH_LED_COUNT; i++){
-                toogleOriginalColors[i] = tooglebutton.getPixelColor(i);
-                tooglebutton.setPixelColor(i, tooglebutton.Color(0,0,255));
-              }
-              tooglebutton.show();
-
-              debugPrint("[ADJUST] Button 14 held - adjustment mode ON");
+              adjustModeActive = false;
             }
             velocity = -1; // Don't send MIDI while held
           } else {
@@ -137,13 +145,16 @@ void handleButtons() {
             if (adjustMode) {
               unsigned long holdDuration = millis() - encoderFlipHoldTime;
               adjustMode = false;
+              adjustModeActive = false;
               sensitivityMode = false;
               saveConfig();
-              // Restore last Toogle Button colors 
-              for(int j = 0; j < LATCH_LED_COUNT; j++){
-                tooglebutton.setPixelColor(j, toogleOriginalColors[j]);
+              // Restore last Toogle Button colors if adjustment mode was activated
+              if (holdDuration >= ENCODER_FLIP_HOLD_DURATION) {
+                for(int j = 0; j < LATCH_LED_COUNT; j++){
+                  tooglebutton.setPixelColor(j, toogleOriginalColors[j]);
+                }
+                tooglebutton.show();
               }
-              tooglebutton.show();
               updateXKeyLEDs();
               
               // Only toggle latch if it was a quick press (less than 500ms)
@@ -188,8 +199,8 @@ void sendMidiEncoder(int index, int direction) {
   if (elapsed < 5) return;  // Skip if less than 5ms since last move, keep from dumping buffer all at once issue we sometimes have got
   lastMoveTime[index] = now;
 
-  // Special handling for encoder indices 1-4 and 5-12 when button 14 is held (brightness/sensitivity/color adjustment)
-  if (index != 4 && adjustMode) {
+  // Special handling for encoder indices 1-4 and 5-12 only after button 14 has been held for the configured duration
+  if (index != 4 && adjustModeActive) {
     // Calculate step size using same velocity scaling as normal encoders
     int level = constrain((int)(elapsed / 15), 0, 7);
     int baseStep = VELOCITY_SCALES[4][7 - level]; // Use level 5 scale for consistent adjustment speed
