@@ -66,6 +66,7 @@ unsigned long encoderFlipHoldTime = 0;       // Time when button 14 was pressed
 
 const int ENCODER_FLIP_HOLD_DURATION = 500;   // Time is ms to determin a hold and not a press
 
+
 // ================================
 // ENCODER AND BUTTON FUNCTIONS
 // ================================
@@ -102,6 +103,9 @@ void handleEncoders() {
 
 // Handles and sends midi for button presses from encoder and from encoder flip button
 void handleButtons() {
+  // Need a space to remember the Toogle Button Color when in Adjust mode
+  static uint32_t toogleOriginalColors[LATCH_LED_COUNT];
+  
   for (int i = 0; i < N_BUTTONS; i++) {
     int reading = digitalRead(BUTTON_PIN[i]);
 
@@ -118,6 +122,13 @@ void handleButtons() {
               // Start tracking hold time for adjustment mode
               encoderFlipHoldTime = millis();
               adjustMode = true;
+              // Save current color of Toogle Button and switch to blue to indicate active adjust mode
+              for(int i = 0; i < LATCH_LED_COUNT; i++){
+                toogleOriginalColors[i] = tooglebutton.getPixelColor(i);
+                tooglebutton.setPixelColor(i, tooglebutton.Color(0,0,255));
+              }
+              tooglebutton.show();
+
               debugPrint("[ADJUST] Button 14 held - adjustment mode ON");
             }
             velocity = -1; // Don't send MIDI while held
@@ -128,6 +139,11 @@ void handleButtons() {
               adjustMode = false;
               sensitivityMode = false;
               saveConfig();
+              // Restore last Toogle Button colors 
+              for(int j = 0; j < LATCH_LED_COUNT; j++){
+                tooglebutton.setPixelColor(j, toogleOriginalColors[j]);
+              }
+              tooglebutton.show();
               updateXKeyLEDs();
               
               // Only toggle latch if it was a quick press (less than 500ms)
